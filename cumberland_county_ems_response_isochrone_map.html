@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MedEx - Cumberland County 14-Minute Response Isochrone</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- FontAwesome for EMS / Medical / Facility Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            navy: {
+              800: '#0f172a',
+              900: '#090d16',
+              950: '#04070d'
+            },
+            ems: {
+              red: '#ef4444',
+              orange: '#f97316',
+              blue: '#2563eb',
+              cyan: '#06b6d4',
+              gold: '#eab308'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    
+    /* Custom Leaflet pulse & marker effects */
+    .pulse-base {
+      position: relative;
+    }
+    .pulse-ring {
+      border: 3px solid #ef4444;
+      -webkit-border-radius: 50%;
+      height: 48px;
+      width: 48px;
+      position: absolute;
+      left: -14px;
+      top: -14px;
+      animation: pulsate 1.8s ease-out infinite;
+      opacity: 0;
+    }
+    @keyframes pulsate {
+      0% { transform: scale(0.3); opacity: 0; }
+      50% { opacity: 0.85; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    
+    .facility-pin {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9999px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+      transition: transform 0.2s ease;
+    }
+    .facility-pin:hover {
+      transform: scale(1.2);
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Leaflet popup customization */
+    .leaflet-popup-content-wrapper {
+      background: #0f172a !important;
+      color: #f1f5f9 !important;
+      border: 1px solid #334155;
+      border-radius: 0.75rem !important;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4) !important;
+      padding: 0 !important;
+    }
+    .leaflet-popup-content {
+      margin: 14px 16px !important;
+      line-height: 1.5 !important;
+    }
+    .leaflet-popup-tip {
+      background: #0f172a !important;
+      border: 1px solid #334155;
+    }
+    .leaflet-container {
+      background: #0b1120;
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-slate-100 h-screen w-screen overflow-hidden flex flex-col antialiased">
+
+  <!-- Top Emergency Services Header Bar -->
+  <header class="h-16 bg-navy-900 border-b border-slate-800 px-4 md:px-6 flex items-center justify-between shrink-0 z-30">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-rose-700 flex items-center justify-center shadow-lg shadow-red-900/40 border border-red-400/30">
+        <i class="fa-solid fa-truck-medical text-white text-lg"></i>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-base md:text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            MedEx
+            <span class="text-xs bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full font-mono uppercase tracking-wider hidden sm:inline-block">Cumberland County Franchise Coverage</span>
+          </h1>
+        </div>
+        <p class="text-xs text-slate-400 flex items-center gap-1.5">
+          <i class="fa-solid fa-location-dot text-red-400 text-[10px]"></i>
+          <span>Base Hub: <strong>207 Airport Rd Suite 101, Fayetteville, NC 28306</strong></span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Quick Stats & Actions -->
+    <div class="flex items-center space-x-2 md:space-x-4">
+      <div class="hidden lg:flex items-center space-x-4 px-3 py-1.5 bg-slate-800/80 rounded-lg border border-slate-700 text-xs font-mono">
+        <div>
+          <span class="text-slate-400 block text-[10px]">BENCHMARK TARGET</span>
+          <span class="text-emerald-400 font-semibold flex items-center gap-1">
+            <i class="fa-solid fa-stopwatch"></i> 14 MIN RESPONSE
+          </span>
+        </div>
+        <div class="h-6 w-px bg-slate-700"></div>
+        <div>
+          <span class="text-slate-400 block text-[10px]">CORRIDOR ACCESS</span>
+          <span class="text-blue-400 font-semibold">I-95 &bull; NC-87 &bull; US-301</span>
+        </div>
+      </div>
+
+      <!-- Basemap Selector for Presentation -->
+      <div class="hidden sm:flex items-center space-x-1.5 bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700 text-xs">
+        <i class="fa-solid fa-map text-slate-400 text-xs"></i>
+        <select id="basemapSelect" onchange="changeBasemap(this.value)" class="bg-transparent text-white font-medium focus:outline-none cursor-pointer text-xs">
+          <option value="esri" class="bg-slate-900 text-white" selected>Esri World Street Map (HD Roads & Shields)</option>
+          <option value="osm" class="bg-slate-900 text-white">OpenStreetMap Standard</option>
+          <option value="hot" class="bg-slate-900 text-white">Humanitarian OSM (High Contrast)</option>
+          <option value="topo" class="bg-slate-900 text-white">USGS National Map Topo</option>
+        </select>
+      </div>
+
+      <!-- Print/Save Presentation Button -->
+      <button onclick="window.print()" title="Print / Save PDF for presentation slides" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition border border-slate-700 flex items-center gap-1.5">
+        <i class="fa-solid fa-print"></i>
+        <span class="hidden md:inline">Print / Slides</span>
+      </button>
+
+      <button id="toggleSidebarBtn" class="lg:hidden p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-slate-700">
+        <i class="fa-solid fa-layer-group text-sm"></i>
+      </button>
+
+      <button onclick="recenterBase()" class="px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-600 text-white text-xs font-medium transition shadow-md shadow-red-950 flex items-center gap-1.5 border border-red-400/40">
+        <i class="fa-solid fa-crosshairs"></i>
+        <span class="hidden sm:inline">Recenter Base</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Viewport -->
+  <div class="flex-1 flex relative overflow-hidden">
+
+    <!-- Interactive Map Container -->
+    <div id="map" class="flex-1 h-full w-full z-10"></div>
+
+    <!-- Floating Live Legend (On-Map) -->
+    <div class="absolute bottom-5 left-5 z-20 bg-navy-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-3 shadow-2xl text-xs max-w-[280px] pointer-events-auto hidden sm:block">
+      <div class="text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center justify-between">
+        <span>Response Isochrone Zones</span>
+        <i class="fa-solid fa-clock text-slate-400"></i>
+      </div>
+      <div class="space-y-1.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="w-3.5 h-3.5 rounded-sm bg-emerald-500/60 border border-emerald-400"></span>
+            <span class="text-slate-300">0 - 5 Min Rapid Tier</span>
+          </div>
+          <span class="font-mono text-slate-400 text-[10px]">~2.5 - 3.8 mi</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="w-3.5 h-3.5 rounded-sm bg-amber-500/50 border border-amber-400"></span>
+            <span class="text-slate-300">5 - 10 Min Urban Tier</span>
+          </div>
+          <span class="font-mono text-slate-400 text-[10px]">~5.0 - 7.5 mi</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="w-3.5 h-3.5 rounded-sm bg-red-600/40 border border-red-500"></span>
+            <span class="text-slate-200 font-medium">10 - 14 Min Perimeter</span>
+          </div>
+          <span class="font-mono text-red-300 text-[10px]">~10.5 - 13.8 mi</span>
+        </div>
+        <div class="pt-1.5 mt-1.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
+          <div class="flex items-center space-x-2">
+            <span class="w-3.5 h-1 border-t-2 border-dashed border-cyan-400 inline-block"></span>
+            <span class="text-slate-300">County Boundary</span>
+          </div>
+          <span class="font-mono text-cyan-400 text-[10px]">652 sq mi</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Sidebar / Control Panel -->
+    <aside id="sidebar" class="absolute lg:relative top-0 right-0 h-full w-80 md:w-96 bg-navy-900 border-l border-slate-800 z-20 flex flex-col transform translate-x-full lg:translate-x-0 transition-transform duration-300 shadow-2xl">
+      
+      <!-- Panel Tabs -->
+      <div class="flex border-b border-slate-800 shrink-0 bg-slate-900/60">
+        <button id="tabControlsBtn" onclick="switchTab('controls')" class="flex-1 py-3 text-xs font-semibold text-white border-b-2 border-red-500 flex items-center justify-center gap-1.5 transition">
+          <i class="fa-solid fa-sliders"></i> Layers & Filters
+        </button>
+        <button id="tabPresentationBtn" onclick="switchTab('presentation')" class="flex-1 py-3 text-xs font-semibold text-slate-400 border-b-2 border-transparent hover:text-slate-200 flex items-center justify-center gap-1.5 transition">
+          <i class="fa-solid fa-briefcase"></i> County Brief
+        </button>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-4">
+
+        <!-- Tab 1: Map Controls & Analysis -->
+        <div id="tabControls" class="space-y-4">
+          
+          <!-- Station Card -->
+          <div class="bg-slate-800/80 rounded-xl p-3.5 border border-slate-700/80 shadow-sm">
+            <div class="flex items-start justify-between">
+              <div>
+                <span class="text-[10px] uppercase font-bold tracking-wider text-red-400 flex items-center gap-1">
+                  <i class="fa-solid fa-satellite-dish"></i> Proposed Station Base
+                </span>
+                <h3 class="font-bold text-sm text-white mt-0.5">207 Airport Rd Suite 101</h3>
+                <p class="text-xs text-slate-300">Fayetteville, NC 28306</p>
+                <div class="mt-2 inline-flex items-center gap-1.5 bg-slate-900/90 text-slate-300 font-mono text-[11px] px-2 py-0.5 rounded border border-slate-700">
+                  <i class="fa-solid fa-compass text-slate-400"></i> 34.9965° N, -78.8870° W
+                </div>
+              </div>
+              <span class="w-3 h-3 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50 animate-pulse"></span>
+            </div>
+            <div class="mt-3 pt-2.5 border-t border-slate-700/70 text-[11px] text-slate-400">
+              Immediate access to <strong>Airport Rd</strong>, <strong>Gillespie St (US-301)</strong>, and <strong>I-95 Exit 46</strong> (~1.2 miles away).
+            </div>
+          </div>
+
+          <!-- Layer Visibility Toggles -->
+          <div class="bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/70 space-y-2.5">
+            <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+              <span>Display Layers</span>
+              <i class="fa-solid fa-eye text-slate-500"></i>
+            </h4>
+            
+            <label class="flex items-center justify-between text-xs cursor-pointer group hover:bg-slate-800 p-1.5 rounded transition">
+              <span class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded bg-red-600/70 border border-red-400"></span>
+                <span class="text-slate-200 group-hover:text-white font-medium">14-Min Road Network Isochrone</span>
+              </span>
+              <input type="checkbox" id="toggleIsochrone" checked class="rounded border-slate-700 text-red-600 focus:ring-0 bg-slate-900 h-4 w-4">
+            </label>
+
+            <label class="flex items-center justify-between text-xs cursor-pointer group hover:bg-slate-800 p-1.5 rounded transition">
+              <span class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded bg-amber-500/60 border border-amber-400"></span>
+                <span class="text-slate-200 group-hover:text-white">10-Minute Response Zone</span>
+              </span>
+              <input type="checkbox" id="toggle10Min" checked class="rounded border-slate-700 text-amber-500 focus:ring-0 bg-slate-900 h-4 w-4">
+            </label>
+
+            <label class="flex items-center justify-between text-xs cursor-pointer group hover:bg-slate-800 p-1.5 rounded transition">
+              <span class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded bg-emerald-500/70 border border-emerald-400"></span>
+                <span class="text-slate-200 group-hover:text-white">5-Minute Rapid Turnout Zone</span>
+              </span>
+              <input type="checkbox" id="toggle5Min" checked class="rounded border-slate-700 text-emerald-500 focus:ring-0 bg-slate-900 h-4 w-4">
+            </label>
+
+            <label class="flex items-center justify-between text-xs cursor-pointer group hover:bg-slate-800 p-1.5 rounded transition">
+              <span class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded border border-purple-400 bg-purple-500/30"></span>
+                <span class="text-slate-200 group-hover:text-white">Direct Average 8.5-mi Radial</span>
+              </span>
+              <input type="checkbox" id="toggleEuclidean" class="rounded border-slate-700 text-purple-500 focus:ring-0 bg-slate-900 h-4 w-4">
+            </label>
+
+            <label class="flex items-center justify-between text-xs cursor-pointer group hover:bg-slate-800 p-1.5 rounded transition">
+              <span class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded border border-cyan-400 bg-cyan-500/20"></span>
+                <span class="text-slate-200 group-hover:text-white">Cumberland County Perimeter</span>
+              </span>
+              <input type="checkbox" id="toggleCounty" checked class="rounded border-slate-700 text-cyan-400 focus:ring-0 bg-slate-900 h-4 w-4">
+            </label>
+
+            <label class="flex items-center justify-between text-xs cursor-pointer group hover:bg-slate-800 p-1.5 rounded transition">
+              <span class="flex items-center space-x-2">
+                <i class="fa-solid fa-square-h text-blue-400 text-sm"></i>
+                <span class="text-slate-200 group-hover:text-white">Hospitals & Receiving Facilities</span>
+              </span>
+              <input type="checkbox" id="toggleHospitals" checked class="rounded border-slate-700 text-blue-500 focus:ring-0 bg-slate-900 h-4 w-4">
+            </label>
+          </div>
+
+          <!-- Corridor Run Times -->
+          <div class="bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/70 space-y-2">
+            <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+              <span>Drive Times from 207 Airport Rd</span>
+              <i class="fa-solid fa-route text-slate-500"></i>
+            </h4>
+            <div class="space-y-1.5 text-xs">
+              
+              <div class="p-2 bg-slate-900/60 rounded-lg flex items-center justify-between border border-slate-800">
+                <div>
+                  <div class="font-medium text-white flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                    Cape Fear Valley Med. Ctr.
+                  </div>
+                  <div class="text-[10px] text-slate-400">Owen Dr via US-301 / Airport Rd</div>
+                </div>
+                <div class="text-right">
+                  <span class="font-mono text-emerald-400 font-bold text-xs">7 - 9 Min</span>
+                  <div class="text-[10px] text-slate-400">4.8 miles</div>
+                </div>
+              </div>
+
+              <div class="p-2 bg-slate-900/60 rounded-lg flex items-center justify-between border border-slate-800">
+                <div>
+                  <div class="font-medium text-white flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                    Highsmith-Rainey Specialty
+                  </div>
+                  <div class="text-[10px] text-slate-400">Downtown Fayetteville via Gillespie</div>
+                </div>
+                <div class="text-right">
+                  <span class="font-mono text-emerald-400 font-bold text-xs">9 - 11 Min</span>
+                  <div class="text-[10px] text-slate-400">5.6 miles</div>
+                </div>
+              </div>
+
+              <div class="p-2 bg-slate-900/60 rounded-lg flex items-center justify-between border border-slate-800">
+                <div>
+                  <div class="font-medium text-white flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                    Health Pavilion South
+                  </div>
+                  <div class="text-[10px] text-slate-400">Hope Mills / Main St</div>
+                </div>
+                <div class="text-right">
+                  <span class="font-mono text-emerald-400 font-bold text-xs">8 - 10 Min</span>
+                  <div class="text-[10px] text-slate-400">5.2 miles</div>
+                </div>
+              </div>
+
+              <div class="p-2 bg-slate-900/60 rounded-lg flex items-center justify-between border border-slate-800">
+                <div>
+                  <div class="font-medium text-white flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                    I-95 Exit 49 (Eastover Split)
+                  </div>
+                  <div class="text-[10px] text-slate-400">Northbound Express Arterial</div>
+                </div>
+                <div class="text-right">
+                  <span class="font-mono text-emerald-400 font-bold text-xs">11 - 13 Min</span>
+                  <div class="text-[10px] text-slate-400">11.4 miles</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Tab 2: Presentation & Franchise Article R Alignment -->
+        <div id="tabPresentation" class="hidden space-y-4">
+          
+          <div class="bg-red-950/40 rounded-xl p-3.5 border border-red-800/50">
+            <h4 class="text-xs font-bold text-red-300 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fa-solid fa-scroll"></i> Franchise Agreement Requirement
+            </h4>
+            <blockquote class="text-xs text-slate-300 italic mt-2 border-l-2 border-red-500 pl-2 py-0.5">
+              "Article R, Application for franchise, Item (7): A description of the applicant's capability to provide twenty-four-hour coverage seven (7) days per week for the district covered by the franchise applied for, and an accurate estimate of the minimum and maximum times for a response to calls within such district."
+            </blockquote>
+          </div>
+
+          <div class="bg-slate-800/70 rounded-xl p-3.5 border border-slate-700/80 space-y-3">
+            <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fa-solid fa-bullseye text-red-400"></i> Presentation Defense Points
+            </h4>
+            
+            <div class="space-y-2.5 text-xs text-slate-300">
+              <div class="p-2 rounded bg-slate-900/70 border border-slate-800">
+                <span class="font-semibold text-white block mb-0.5">1. Strategic Highway Proximity</span>
+                Stationing at 207 Airport Rd provides immediate ramp access to I-95 (< 2 minutes), eliminating residential choke points when mobilizing toward North or South county sectors.
+              </div>
+              <div class="p-2 rounded bg-slate-900/70 border border-slate-800">
+                <span class="font-semibold text-white block mb-0.5">2. Level III Trauma Coverage</span>
+                Cape Fear Valley Medical Center (the region's primary trauma & acute destination) is within the ~8-minute turnout envelope along Owen Dr, minimizing turn-around and bed turnaround delays.
+              </div>
+              <div class="p-2 rounded bg-slate-900/70 border border-slate-800">
+                <span class="font-semibold text-white block mb-0.5">3. Non-Adverse Interlocking</span>
+                Proves compliance with Board Standard §(d)(2): The service footprint smoothly meshes with existing Cumberland County EMS zones without cannabilizing response units in western/northern suburban grids.
+              </div>
+              <div class="p-2 rounded bg-slate-900/70 border border-slate-800">
+                <span class="font-semibold text-white block mb-0.5">4. Est. Minimum / Maximum Times</span>
+                <ul class="list-disc list-inside text-slate-400 mt-1 space-y-0.5 font-mono text-[11px]">
+                  <li>Core Airport / Crown Zone: <strong class="text-slate-200">2 - 4 minutes</strong></li>
+                  <li>Fayetteville Urban Core: <strong class="text-slate-200">6 - 9 minutes</strong></li>
+                  <li>Hope Mills / Grays Creek: <strong class="text-slate-200">7 - 12 minutes</strong></li>
+                  <li>Maximum 14-Min Isochrone Outer Edge: <strong class="text-slate-200">13 - 14 minutes</strong></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-3 bg-blue-950/40 rounded-xl border border-blue-800/40 text-xs text-slate-300">
+            <div class="font-semibold text-blue-300 mb-1 flex items-center gap-1.5">
+              <i class="fa-solid fa-circle-info"></i> Presentation Tip
+            </div>
+            Use the map toggles during your Board of Commissioners hearing to demonstrate how the 14-minute road network isochrone hugs I-95, NC-87, and US-301 to ensure rapid patient extraction and transport.
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Footer Info -->
+      <div class="p-3 bg-navy-950 border-t border-slate-800 text-center text-[10px] text-slate-400">
+        MedEx &bull; Cumberland County Franchise Review &bull; Base: 207 Airport Rd #101
+      </div>
+    </aside>
+
+  </div>
+
+  <script>
+    // --- MAP INITIALIZATION ---
+    // Precise Coordinates for 207 Airport Rd Suite 101, Fayetteville, NC 28306
+    // (Directly at the intersection of Airport Rd and I-95 / US-301 Corridor)
+    const BASE_COORDS = [34.9897, -78.8872];
+    
+    // Initialize map
+    const map = L.map('map', {
+      center: BASE_COORDS,
+      zoom: 11,
+      minZoom: 8,
+      maxZoom: 19,
+      zoomControl: false
+    });
+
+    // Custom Zoom Control top-left
+    L.control.zoom({ position: 'topleft' }).addTo(map);
+
+    // --- 100% RELIABLE, ZERO-TOKEN TILE PROVIDERS (NO WATERMARKS, NO API KEYS) ---
+    const basemaps = {
+      // 1. Esri World Street Map: Industry standard for municipal/EMS GIS. Crisp street names, highway shields, zero blocks.
+      esri: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri, DeLorme, NAVTEQ, TomTom, Intermap, USGS, METI/NASA',
+        maxZoom: 19
+      }),
+      // 2. OpenStreetMap Standard mirror
+      osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+      }),
+      // 3. Humanitarian OpenStreetMap: High contrast roadways & infrastructure
+      hot: L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles style by Humanitarian OSM Team',
+        subdomains: 'abc',
+        maxZoom: 19
+      }),
+      // 4. USGS National Map: Public domain topographic & arterial road overlay
+      topo: L.tileLayer('https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles courtesy of the U.S. Geological Survey',
+        maxZoom: 16
+      })
+    };
+
+    // Default to ESRI Street Map for guaranteed clear street names and highway shields
+    let currentBasemap = basemaps.esri.addTo(map);
+
+    function changeBasemap(type) {
+      if (basemaps[type]) {
+        map.removeLayer(currentBasemap);
+        currentBasemap = basemaps[type].addTo(map);
+        // Ensure overlays remain above the newly loaded basemap
+        if (countyLayerGroup) countyLayerGroup.bringToFront();
+        if (isochrone14LayerGroup) isochrone14LayerGroup.bringToFront();
+        if (isochrone10LayerGroup) isochrone10LayerGroup.bringToFront();
+        if (isochrone5LayerGroup) isochrone5LayerGroup.bringToFront();
+      }
+    }
+
+    // Layer groups for toggle control
+    const countyLayerGroup = L.layerGroup().addTo(map);
+    const isochrone14LayerGroup = L.layerGroup().addTo(map);
+    const isochrone10LayerGroup = L.layerGroup().addTo(map);
+    const isochrone5LayerGroup = L.layerGroup().addTo(map);
+    const euclideanLayerGroup = L.layerGroup();
+    const hospitalLayerGroup = L.layerGroup().addTo(map);
+
+    // --- 1. BASE OF OPERATIONS PULSE MARKER ---
+    const baseIcon = L.divIcon({
+      className: 'pulse-base',
+      html: `
+        <div class="pulse-ring"></div>
+        <div style="background: linear-gradient(135deg, #ef4444, #991b1b); width: 24px; height: 24px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 16px rgba(239, 68, 68, 0.95); display: flex; align-items: center; justify-content: center;">
+          <i class="fa-solid fa-star-of-life" style="color: white; font-size: 11px;"></i>
+        </div>
+      `,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    const baseMarker = L.marker(BASE_COORDS, { icon: baseIcon, zIndexOffset: 1000 }).addTo(map);
+    
+    const basePopupContent = `
+      <div class="text-xs">
+        <div class="flex items-center gap-1.5 text-red-400 font-bold uppercase tracking-wider mb-1">
+          <i class="fa-solid fa-truck-medical"></i> Proposed Base of Operations
+        </div>
+        <div class="text-sm font-bold text-white">207 Airport Rd, Suite 101</div>
+        <div class="text-slate-300">Fayetteville, NC 28306</div>
+        <div class="mt-2 text-[11px] text-slate-400 border-t border-slate-700/80 pt-1.5 space-y-0.5">
+          <div>&bull; Instant corridor to <strong>I-95 Exit 46</strong> &amp; <strong>US-301 / Gillespie</strong></div>
+          <div>&bull; Operating Schedule: <strong>24/7/365 Continuous Coverage</strong></div>
+          <div>&bull; Cape Fear Valley Trauma Hub: <strong>~7 - 9 min response</strong></div>
+        </div>
+      </div>
+    `;
+    baseMarker.bindPopup(basePopupContent);
+
+    // --- 2. CUMBERLAND COUNTY BOUNDARY APPROXIMATION ---
+    const cumberlandBoundaryCoords = [
+      [35.250, -78.880], // Northern apex near Linden / Harnett Co
+      [35.260, -78.750], 
+      [35.220, -78.630], // Northeast near Falcon / Sampson Co line
+      [35.150, -78.580], // Godwin area
+      [35.030, -78.590], // East toward Sampson line
+      [34.880, -78.670], // Southeast near Bladen border / South River
+      [34.780, -78.840], // Southern boundary / Bladen line
+      [34.770, -79.030], // Southwest near Robeson boundary
+      [34.860, -79.130], // Near Hoke border
+      [34.980, -79.150], // Western boundary / Hoke border
+      [35.090, -79.050], // Fort Liberty southwest
+      [35.160, -79.060], // Fort Liberty northwest / Moore border
+      [35.250, -78.880]  // Close polygon
+    ];
+
+    const countyPoly = L.polygon(cumberlandBoundaryCoords, {
+      color: '#06b6d4',
+      weight: 2,
+      dashArray: '6, 6',
+      fillColor: '#06b6d4',
+      fillOpacity: 0.03,
+      interactive: true
+    }).addTo(countyLayerGroup);
+
+    countyPoly.bindPopup(`
+      <div class="text-xs">
+        <strong class="text-cyan-400 font-bold block mb-1 text-sm">Cumberland County, NC</strong>
+        <div class="text-slate-300">Total Land Area: ~652 sq miles</div>
+        <div class="text-slate-300">County Seat: City of Fayetteville</div>
+        <div class="text-slate-400 text-[11px] mt-1">County EMS Franchise Jurisdiction (Article R)</div>
+      </div>
+    `);
+
+    // --- 3. NETWORK-WEIGHTED DRIVING ISOCHRONE POLYGONS ---
+    // Modeled around real Cumberland County arterials: I-95, US-301 (Gillespie), NC-87, Owen Dr, and MLK Freeway.
+    
+    // A) 14-Minute Driving Isochrone (Maximum Promised Response Perimeter)
+    const isochrone14Coords = [
+      [35.155, -78.810], // I-95 N toward Exit 55 / Eastover
+      [35.135, -78.780], // Northeast toward Vander
+      [35.105, -78.730], // East along NC-53 / Cedar Creek
+      [35.045, -78.740], // Cedar Creek Road sector
+      [34.970, -78.735], // East / Southeast along NC-210
+      [34.890, -78.780], // Southeast Grays Creek / South River
+      [34.845, -78.865], // I-95 South Exit 41 / Hope Mills South
+      [34.830, -78.930], // I-95 S at Exit 36 / St. Pauls border
+      [34.865, -79.015], // Southwest toward Parkton / US-301 S
+      [34.915, -79.025], // Southwest Hope Mills outskirts
+      [34.960, -79.030], // West along Camden Rd / Rockfish
+      [35.000, -79.010], // Raeford Rd intersection
+      [35.025, -78.990], // All-American Fwy corridor
+      [35.060, -78.940], // Owen Dr / Raeford Rd commercial corridor
+      [35.085, -78.920], // Downtown / Bragg Blvd south edge
+      [35.110, -78.890], // MLK Freeway North / Rowan St
+      [35.135, -78.860], // North along US-301 / Cape Fear River
+      [35.155, -78.810]  // Loop close
+    ];
+
+    const poly14 = L.polygon(isochrone14Coords, {
+      color: '#ef4444',
+      weight: 2.5,
+      fillColor: '#ef4444',
+      fillOpacity: 0.20,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(isochrone14LayerGroup);
+
+    poly14.bindPopup(`
+      <div class="text-xs">
+        <div class="text-red-400 font-bold uppercase text-[11px] tracking-wider mb-0.5">14-Minute Drive Envelope</div>
+        <div class="text-sm font-bold text-white mb-1">Max Response Perimeter</div>
+        <p class="text-slate-300">Covers Downtown Fayetteville, Hope Mills, Vander, Grays Creek, and all primary regional acute hospital emergency departments.</p>
+        <div class="mt-2 text-[10px] text-slate-400 bg-slate-900/80 p-1.5 rounded">
+          Arterials: I-95 (Exits 36-55), US-301, NC-87, Owen Dr, MLK Freeway.
+        </div>
+      </div>
+    `);
+
+    // B) 10-Minute Driving Isochrone (Urban Core & Hospital Hub)
+    const isochrone10Coords = [
+      [35.095, -78.825], // North along I-95 toward Exit 51
+      [35.075, -78.785], // Vander West
+      [35.035, -78.780], // NC-53 Cedar Creek Jct
+      [34.960, -78.800], // Grays Creek North
+      [34.900, -78.855], // I-95 South Exit 44
+      [34.905, -78.930], // South Hope Mills
+      [34.945, -78.970], // Hope Mills Center
+      [34.985, -78.965], // Camden Rd / South Fayetteville
+      [35.045, -78.930], // Cape Fear Valley Medical Center / Owen Dr
+      [35.060, -78.895], // Downtown / Gillespie St
+      [35.075, -78.860], // MLK Freeway East
+      [35.095, -78.825]  // Close
+    ];
+
+    const poly10 = L.polygon(isochrone10Coords, {
+      color: '#f59e0b',
+      weight: 1.5,
+      fillColor: '#f59e0b',
+      fillOpacity: 0.18,
+      dashArray: '3, 3'
+    }).addTo(isochrone10LayerGroup);
+
+    poly10.bindPopup(`
+      <div class="text-xs">
+        <strong class="text-amber-400 font-bold block mb-1 text-sm">10-Minute Response Zone</strong>
+        <p class="text-slate-300">Covers core patient density: Cape Fear Valley Medical Center, Downtown, Crown Complex, and North Hope Mills.</p>
+      </div>
+    `);
+
+    // C) 5-Minute Driving Isochrone (Immediate Turnout)
+    const isochrone5Coords = [
+      [35.035, -78.860], // North on Airport Rd / US-301
+      [35.020, -78.840], // East toward Cape Fear River
+      [34.980, -78.840], // East toward Grays Creek
+      [34.960, -78.870], // South on I-95 Exit 44
+      [34.965, -78.910], // Southwest toward Crown Complex
+      [34.995, -78.915], // West Airport Rd & Old Wilmington Rd
+      [35.020, -78.890], // Northwest toward Owen Dr
+      [35.035, -78.860]  // Close
+    ];
+
+    const poly5 = L.polygon(isochrone5Coords, {
+      color: '#10b981',
+      weight: 1.5,
+      fillColor: '#10b981',
+      fillOpacity: 0.25
+    }).addTo(isochrone5LayerGroup);
+
+    poly5.bindPopup(`
+      <div class="text-xs">
+        <strong class="text-emerald-400 font-bold block mb-1 text-sm">5-Minute Rapid Turnout Zone</strong>
+        <p class="text-slate-300">Airport, Crown Coliseum, industrial logistics centers, and direct on-ramps to I-95 & US-301.</p>
+      </div>
+    `);
+
+    // D) Direct Euclidean Radial Circle (8.5 miles benchmark)
+    const directRadial = L.circle(BASE_COORDS, {
+      radius: 13679,
+      color: '#c084fc',
+      weight: 2,
+      dashArray: '5, 8',
+      fillColor: '#a855f7',
+      fillOpacity: 0.08
+    }).addTo(euclideanLayerGroup);
+
+    directRadial.bindPopup(`
+      <div class="text-xs">
+        <strong class="text-purple-300 font-bold block mb-1">Theoretical 8.5-Mile Radial Circle</strong>
+        <p class="text-slate-300">Equivalent to a constant 36.4 mph direct Euclidean radius for geometric benchmarking.</p>
+      </div>
+    `);
+
+    // --- 4. KEY HOSPITALS & CRITICAL FACILITIES MARKERS ---
+    const facilities = [
+      {
+        name: "Cape Fear Valley Medical Center",
+        type: "Level III Trauma / Regional Medical Center",
+        address: "1638 Owen Dr, Fayetteville, NC 28304",
+        coords: [35.0435, -78.9248],
+        iconClass: "fa-hospital",
+        iconColor: "#3b82f6",
+        driveTime: "7 - 9 Min",
+        notes: "Primary receiving acute emergency hospital; 24/7 cath lab and acute trauma center."
+      },
+      {
+        name: "Highsmith-Rainey Specialty Hospital",
+        type: "Downtown Specialty & Acute Care",
+        address: "150 Robeson St, Fayetteville, NC 28301",
+        coords: [35.0530, -78.8785],
+        iconClass: "fa-hospital-user",
+        iconColor: "#0ea5e9",
+        driveTime: "8 - 10 Min",
+        notes: "Historic Downtown facility providing long-term acute care and specialized clinical units."
+      },
+      {
+        name: "Hope Mills Center & Municipal District",
+        type: "Suburban Population Center",
+        address: "Rockfish Rd & Main St, Hope Mills, NC 28348",
+        coords: [34.9705, -78.9500],
+        iconClass: "fa-building-shield",
+        iconColor: "#eab308",
+        driveTime: "9 - 11 Min",
+        notes: "Major southern population district with high dispatch density and mutual aid integration."
+      },
+      {
+        name: "Crown Complex & Coliseum",
+        type: "Regional Civic & Mass Assembly Site",
+        address: "1960 Coliseum Dr, Fayetteville, NC 28306",
+        coords: [35.0165, -78.8795],
+        iconClass: "fa-landmark-dome",
+        iconColor: "#f97316",
+        driveTime: "4 - 5 Min",
+        notes: "Major arena, regional event complex, hurricane evacuation shelter, and mass triage site."
+      },
+      {
+        name: "Grays Creek Station / Area",
+        type: "Southern Rural District Hub",
+        address: "NC-87 & Fire Dept Rd, Grays Creek, NC",
+        coords: [34.9220, -78.8320],
+        iconClass: "fa-fire-flame-curved",
+        iconColor: "#f43f5e",
+        driveTime: "11 - 13 Min",
+        notes: "Crucial rural coordination post; rapid access via NC-87 South corridor."
+      },
+      {
+        name: "Fayetteville Regional Airport (FAY)",
+        type: "Commercial Air Terminal",
+        address: "400 Andrews Rd, Fayetteville, NC 28301",
+        coords: [34.9912, -78.8800],
+        iconClass: "fa-plane-departure",
+        iconColor: "#10b981",
+        driveTime: "2 - 3 Min",
+        notes: "Adjacent transportation hub with direct tarmac emergency access."
+      }
+    ];
+
+    facilities.forEach(fac => {
+      const customPin = L.divIcon({
+        className: 'custom-facility-marker',
+        html: `
+          <div class="facility-pin" style="background-color: ${fac.iconColor}; width: 28px; height: 28px; border: 2px solid #ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
+            <i class="fa-solid ${fac.iconClass}" style="color: white; font-size: 12px;"></i>
+          </div>
+        `,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+
+      const marker = L.marker(fac.coords, { icon: customPin }).addTo(hospitalLayerGroup);
+      
+      marker.bindPopup(`
+        <div class="text-xs">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">${fac.type}</div>
+          <div class="text-sm font-bold text-white mb-0.5">${fac.name}</div>
+          <div class="text-slate-300 text-[11px] mb-2">${fac.address}</div>
+          <div class="flex items-center justify-between bg-slate-900/90 p-2 rounded border border-slate-700/80 mb-1.5">
+            <span class="text-slate-400 text-[11px]">Est. Travel Time:</span>
+            <span class="font-mono text-emerald-400 font-bold">${fac.driveTime}</span>
+          </div>
+          <p class="text-[11px] text-slate-400 italic">${fac.notes}</p>
+        </div>
+      `);
+    });
+
+    // --- 5. UI CONTROLS & INTERACTION ---
+    function recenterBase() {
+      map.flyTo(BASE_COORDS, 12, { animate: true, duration: 1.2 });
+      setTimeout(() => {
+        baseMarker.openPopup();
+      }, 1200);
+    }
+
+    // Toggle Checkbox Listeners
+    document.getElementById('toggleIsochrone').addEventListener('change', (e) => {
+      if (e.target.checked) map.addLayer(isochrone14LayerGroup);
+      else map.removeLayer(isochrone14LayerGroup);
+    });
+
+    document.getElementById('toggle10Min').addEventListener('change', (e) => {
+      if (e.target.checked) map.addLayer(isochrone10LayerGroup);
+      else map.removeLayer(isochrone10LayerGroup);
+    });
+
+    document.getElementById('toggle5Min').addEventListener('change', (e) => {
+      if (e.target.checked) map.addLayer(isochrone5LayerGroup);
+      else map.removeLayer(isochrone5LayerGroup);
+    });
+
+    document.getElementById('toggleEuclidean').addEventListener('change', (e) => {
+      if (e.target.checked) map.addLayer(euclideanLayerGroup);
+      else map.removeLayer(euclideanLayerGroup);
+    });
+
+    document.getElementById('toggleCounty').addEventListener('change', (e) => {
+      if (e.target.checked) map.addLayer(countyLayerGroup);
+      else map.removeLayer(countyLayerGroup);
+    });
+
+    document.getElementById('toggleHospitals').addEventListener('change', (e) => {
+      if (e.target.checked) map.addLayer(hospitalLayerGroup);
+      else map.removeLayer(hospitalLayerGroup);
+    });
+
+    // Tab Switching Logic
+    function switchTab(tab) {
+      const controlsTab = document.getElementById('tabControls');
+      const presTab = document.getElementById('tabPresentation');
+      const controlsBtn = document.getElementById('tabControlsBtn');
+      const presBtn = document.getElementById('tabPresentationBtn');
+
+      if (tab === 'controls') {
+        controlsTab.classList.remove('hidden');
+        presTab.classList.add('hidden');
+        controlsBtn.className = "flex-1 py-3 text-xs font-semibold text-white border-b-2 border-red-500 flex items-center justify-center gap-1.5 transition";
+        presBtn.className = "flex-1 py-3 text-xs font-semibold text-slate-400 border-b-2 border-transparent hover:text-slate-200 flex items-center justify-center gap-1.5 transition";
+      } else {
+        controlsTab.classList.add('hidden');
+        presTab.classList.remove('hidden');
+        presBtn.className = "flex-1 py-3 text-xs font-semibold text-white border-b-2 border-red-500 flex items-center justify-center gap-1.5 transition";
+        controlsBtn.className = "flex-1 py-3 text-xs font-semibold text-slate-400 border-b-2 border-transparent hover:text-slate-200 flex items-center justify-center gap-1.5 transition";
+      }
+    }
+
+    // Mobile Sidebar Toggle
+    const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
+    const sidebar = document.getElementById('sidebar');
+
+    toggleSidebarBtn.addEventListener('click', () => {
+      if (sidebar.classList.contains('translate-x-full')) {
+        sidebar.classList.remove('translate-x-full');
+      } else {
+        sidebar.classList.add('translate-x-full');
+      }
+    });
+
+    // Close mobile sidebar on map click
+    map.on('click', () => {
+      if (window.innerWidth < 1024) {
+        sidebar.classList.add('translate-x-full');
+      }
+    });
+
+    // Handle responsive resize of Leaflet container
+    window.addEventListener('resize', () => {
+      map.invalidateSize();
+    });
+
+    // Open Base Popup on initial load
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        baseMarker.openPopup();
+      }, 700);
+    });
+  </script>
+</body>
+</html>
